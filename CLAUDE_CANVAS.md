@@ -1,7 +1,5 @@
 # Drupal Canvas & Canvas AI: Architecture Reference
 
-> **See also:** [@CLAUDE_CANVAS.md](./CLAUDE_CANVAS.md) for comprehensive Canvas module internals (backend architecture, frontend stack, component sources, data model, coding standards, testing, dev workflow, glossary).
-
 All paths are relative to the repo root: `web/modules/contrib/canvas/`.
 
 ---
