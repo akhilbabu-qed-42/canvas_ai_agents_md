@@ -1,279 +1,438 @@
-# Drupal Canvas & Canvas AI: Architecture Reference
+# Drupal Canvas — Contributor Reference
 
-All paths are relative to the repo root: `web/modules/contrib/canvas/`.
+This is a comprehensive map of the Drupal Canvas module for working on the codebase. All paths are relative to this directory (`web/modules/contrib/canvas/`). Drupal Canvas requires **Drupal core ≥ 11.2** and PHP 8.3.
 
----
-
-## 1. What is Canvas?
-
-Drupal Canvas is a visual page-builder module for Drupal 10/11. It provides:
-- A React-based in-browser editor (rendered inside an iframe) where editors assemble pages by placing components into regions and slots.
-- A custom content entity (`canvas_page`) for standalone pages, plus a `content_template` config entity that attaches canvas layouts to existing Drupal content entities via view modes.
-- A component model that unifies three different component sources — Single Directory Components (SDC), Drupal block plugins, and JavaScript (React/Preact) code components — under a single abstraction (`canvas_component` config entity).
-- A versioned auto-save system so in-progress edits never block publishing.
+> "Canvas is visual-first": page = a component tree first, data wired in second. This inverts Drupal's traditional data-first model.
 
 ---
 
-## 2. Component Entities and Sources
+## 1. What Canvas is
 
-### The `canvas_component` Config Entity
-`src/Entity/Component.php` — wraps any component source. Key fields: `id`, `label`, `source` (plugin ID), `source_local_id`, `provider`, `active_version`, `versioned_properties`.
+A React + Redux page builder for Drupal that lets non-developers compose pages in the browser. It provides:
 
-### Component Sources (Plugin System)
-The `ComponentSource` plugin type (`src/ComponentSource/ComponentSourceInterface.php`) abstracts rendering and input resolution. Three concrete source plugins exist:
-
-| Source | Plugin file | What it wraps |
-|--------|-------------|---------------|
-| `sdc` | `src/Plugin/Canvas/ComponentSource/SingleDirectoryComponent.php` | Drupal Single Directory Components (Twig + YAML props) |
-| `block` | `src/Plugin/Canvas/ComponentSource/BlockComponent.php` | Any Drupal block plugin |
-| `js_component` | `src/Plugin/Canvas/ComponentSource/JsComponent.php` | React/Preact code components (`js_component` entity) |
-
-The `js_component` config entity (`src/Entity/JavaScriptComponent.php`) stores `source_code` (JS), `css`, and a JSON Schema (`schema`) that defines the component's props. These are React/Preact components built and edited entirely within the Canvas UI — their source lives in the `js_component` Drupal config, not in any file on disk.
-
-A `Fallback` plugin (`src/Plugin/Canvas/ComponentSource/Fallback.php`) handles broken or missing sources gracefully.
-
-### Component Trees and Slots
-A component tree is stored as a multi-value field (`ComponentTreeItem` field type, `src/Plugin/Field/FieldType/ComponentTreeItem.php`). Each item carries: `uuid`, `component_id`, `inputs` (array of `PropSource` definitions), `parent_uuid`, `slot`, and `label`. The tree is hierarchical — a component placed inside a slot of another component references its parent via `parent_uuid` + `slot`.
-
-`canvas_page` and `content_template` both carry a component tree field. `page_region` entities hold global regions (header/footer) that persist across pages.
-
-### Prop Sources
-How a prop's value is resolved at render time is determined by its `PropSource` type (`src/PropSource/`):
-
-- `StaticPropSource` — hard-coded value
-- `EntityFieldPropSource` — pulled from a Drupal entity field
-- `HostEntityUrlPropSource` — URL of the host entity
-- `AdaptedPropSource` — chains/transforms another prop source
+- A **custom content entity** `canvas_page` for standalone pages.
+- A **`content_template` config entity** that attaches Canvas layouts to existing content entities by entity type + bundle + view mode (currently only `Node`).
+- A **unified component model** wrapping three sources (SDC, block plugins, JS code components) behind a single `canvas_component` config entity.
+- A **shape-matching system** that lets component props be wired to Drupal entity fields with type safety, or filled with ad-hoc "static" data.
+- A **versioned auto-save system** so in-progress edits don't block publishing.
+- An **AI sub-module** (`canvas_ai`) — see `modules/canvas_ai/`.
 
 ---
 
-## 3. Other Key Entities
+## 2. Documentation map (read these first when working in an area)
 
-| Entity type | Class | Purpose |
-|-------------|-------|---------|
-| `canvas_page` | `src/Entity/Page.php` | Standalone canvas page (content entity) |
-| `content_template` | `src/Entity/ContentTemplate.php` | Attaches canvas layout to existing content via view mode |
-| `js_component` | `src/Entity/JavaScriptComponent.php` | Stores JS/React component code and schema |
-| `pattern` | `src/Entity/Pattern.php` | Reusable component presets |
-| `page_region` | `src/Entity/PageRegion.php` | Global theme regions (header, footer) |
-| `asset_library` | `src/Entity/AssetLibrary.php` | Shared CSS/font/image assets |
-| `brand_kit` | `src/Entity/BrandKit.php` | Design tokens and brand styling |
+Authoritative docs live in `docs/`. The hierarchy:
+
+| Doc | Topic | Read when working on… |
+|-----|-------|----------------------|
+| `docs/intro.md` | 30,000-ft overview | New contributors |
+| `docs/components.md` | Component sources (SDC/Block/JS), eligibility criteria, Fallback | Component source plugins |
+| `docs/data-model.md` | `ComponentTreeItem` field type, layout/model UI shape, versioning | Field types, validation, updaters |
+| `docs/config-management.md` | All Canvas config entities (`Component`, `JavaScriptComponent`, `PageRegion`, `Pattern`, `ContentTemplate`, `Folder`, `BrandKit`, `StagedConfigUpdate`) | Config entities & config schema |
+| `docs/shape-matching.md` | `PropShape`, `PropSource`, matchers, `PropSourceSuggester`, prop expressions | Prop binding & shape matching |
+| `docs/redux-integrated-field-widgets.md` | How Drupal Form API field widgets are synced into Redux for real-time preview | Field widget integration & transforms |
+| `docs/twig-to-react-in-canvas-stark.md` | `canvas_stark` admin theme: custom HTML elements → React via Hyperscriptify | Custom widget rendering |
+| `docs/notifications.md` | Notification system + REST API (gated by `canvas_dev_mode`) | Notifications |
+| `docs/personalization.md` | Segment / Variant / Switch / Case model | `canvas_personalization` submodule |
+| `docs/react-codebase/page-preview.md` | `<iframe>` preview, IFrameSwapper, overlay UI | Preview rendering / UI overlay |
+| `docs/react-codebase/code-editor.md` | In-browser JS/CSS code component compiler pipeline (SWC, Lightning CSS, Tailwind) | Code-component editor |
+| `docs/react-codebase/import-sorting.md` | Import order rules | React code edits |
+| `docs/testing/{setup,phpunit,playwright,static,gitlab-ci}.md` | Test infrastructure | Writing tests |
+| `docs/release-process.md` | Tagging, hotfix branches | Releases |
+| `docs/adr/*` | Architectural Decision Records (11 ADRs) | Big-picture decisions |
+| `API.md`, `openapi.yml` | HTTP API contract | API changes |
+
+Each domain doc also points at the Drupal.org issue queue *component* and `CODEOWNERS` entries — use those to file/track issues.
+
+### Key ADRs
+
+- **ADR-2**: SDC slots are the basis of the component tree; field types populate SDC props.
+- **ADR-3**: Auto-generate a `Component` config entity for every eligible SDC.
+- **ADR-4**: `canvas_page` is a content entity.
+- **ADR-5**: Keep the front end simple (data shaping happens server-side).
+- **ADR-6**: One field row per component instance (no compound field-item storage).
+- **ADR-7/8**: Bundle import-map deps; mark them external when re-imported from nested deps.
+- **ADR-9**: Extensions API architecture.
+- **ADR-10**: Dynamic config schema per component instance for translatability.
+- **ADR-11**: New `content-entity-reference` prop shape for code components.
 
 ---
 
-## 4. Internal HTTP API
+## 3. Backend (PHP) architecture
 
-The UI communicates with Drupal exclusively through a custom REST API (no JSON:API or REST module). Routes are defined in `canvas.routing.yml`. Base path: `/canvas/api/v0/`.
+### 3.1 Top-level source layout (`src/`)
 
-Key endpoint groups:
+| Dir / file | Purpose |
+|---|---|
+| `Entity/` | Content + config entities (`Page`, `ContentTemplate`, `Component`, `JavaScriptComponent`, `PageRegion`, `Pattern`, `Folder`, `BrandKit`, `AssetLibrary`, `StagedConfigUpdate`, plus `VersionedConfigEntityBase`/Interface) |
+| `Controller/` | All HTTP API controllers (`Api*Controllers.php`) and admin/UI controllers (`CanvasController`, `ComponentAuditController`, etc.) |
+| `ComponentSource/` | Interfaces & manager for the component source plugin type (`ComponentSourceInterface`, `ComponentSourceManager`, updater + slot-aware variants) |
+| `Plugin/Canvas/ComponentSource/` | The four concrete sources: `SingleDirectoryComponent`, `BlockComponent`, `JsComponent`, `Fallback`, plus `GeneratedFieldExplicitInputUxComponentSourceBase` (the reusable infra for sources without their own input UX) |
+| `Plugin/Field/FieldType/ComponentTreeItem.php` | The Canvas field type that stores a component tree |
+| `Plugin/DataType/` | `ComponentTreeStructure`, `ComponentInputs`, low-level data types |
+| `Plugin/Validation/Constraint/` | All Canvas validation constraints (component existence, prop shape storability, JS component metadata, etc.) |
+| `Plugin/DataTypeOverride/` | Overrides for core data types (e.g. `UriOverride`) |
+| `PropShape/` | `PropShape`, `StorablePropShape`, `CandidateStorablePropShape`, repositories |
+| `PropSource/` | `StaticPropSource`, `EntityFieldPropSource`, `HostEntityUrlPropSource`, `AdaptedPropSource` |
+| `PropExpressions/StructuredData/` | The prop-expression DSL (`FieldPropExpression`, `ReferenceFieldPropExpression`, `Evaluator`, `Labeler`, …) |
+| `ShapeMatcher/` | `EntityFieldPropSourceMatcher`, `HostEntityUrlPropSourceMatcher`, `AdaptedPropSourceMatcher`, `PropSourceSuggester` |
+| `JsonSchemaInterpreter/` | Translates SDC JSON schema → primitive `data type` + validation constraints (`JsonSchemaType::computeStorablePropShape()`, `toDataTypeShapeRequirements()`) |
+| `AutoSave/` | The auto-save manager and storage |
+| `Audit/` | `ComponentAudit` (where is a component used?), used by config dependency removal |
+| `Config/` | `CanvasConfigOverrides` (auto-save → live config overlay), `CanvasConfigUpdater` |
+| `Form/` | Server-side forms (`ComponentInstanceForm`, page forms) |
+| `Hook/` | OOP hook handler classes (per Drupal 11 hook attribute system) |
+| `EntityHandlers/` | Custom storage handlers (e.g. `JavascriptComponentStorage`, `StagedConfigUpdateStorage`) |
+| `EventSubscriber/` | Route & request subscribers |
+| `Render/` | `CanvasTemplateRenderer`, `CanvasPreviewRenderer`, main-content renderers |
+| `Theme/` | Theme engine integration |
+| `Twig/` | Twig extensions used by Canvas + `canvas_stark` theme |
+| `Validation/`, `TypedData/` | Misc validation infra |
+| `Resource/` | Internal HTTP API resource helpers |
 
-| Group | Endpoints |
-|-------|-----------|
-| Config CRUD | `GET/PATCH/POST/DELETE /config/{entity_type}/{entity}` |
-| Content CRUD | `GET/PATCH/POST/DELETE /pages/{entity_type}/{entity}` |
-| Layout | `GET/PATCH/POST /layout/{entity_type}/{entity}` |
-| Auto-save | `GET /auto-saves/pending`, `POST /auto-saves/publish`, `DELETE /auto-saves/{entity_type}/{entity}` |
-| Component instance form | `GET/POST /form/component-instance/{entity_type}/{entity}` |
-| Media / Artifacts | `POST /media/upload`, `POST /artifacts/upload` |
-| Preview | Rendered via layout GET with preview flag |
-| Notifications | `GET /notifications`, `POST /notifications/mark-as-read` |
-| Usage tracking | `GET /usage/component`, `GET /usage/component/{id}` |
+### 3.2 Component sources
 
-Controllers live in `src/Controller/`. Access is controlled by `_canvas_authentication_required` plus entity-level access checks.
+Plugin type `canvas_component_source` (manager: `src/ComponentSource/ComponentSourceManager.php`). To add a new source: implement `ComponentSourceInterface` (or extend `ComponentSourceBase` / `GeneratedFieldExplicitInputUxComponentSourceBase`). Sources without their own input UX **must** produce an SDC `ComponentMetadata` so shape-matching can generate a field-based input UX — see `JsComponent::buildEphemeralSdcPluginInstance()` for the canonical example.
+
+Eligibility checks: `ComponentMetadataRequirementsChecker` (SDC), `BlockComponent::checkRequirements()` (blocks). Failures are stored in `ComponentIncompatibilityReasonRepository` and surfaced in `/admin/appearance/component/status`.
+
+Fallback flow: when a config dependency is removed, `Component::onDependencyRemoval()` consults `ComponentAudit`; if the component is in use, the source is swapped to `Fallback` and `fallback_metadata` is used so existing trees keep rendering — see `docs/components.md` §3.4.
+
+### 3.3 The component tree (`ComponentTreeItem`)
+
+Each row in a Canvas field is one component instance with six stored field props:
+
+`uuid · component_id · component_version · parent_uuid · slot · inputs`
+
+…plus three computed props (`component`, `parent_item`, `inputs_resolved`). Top-level instances have null `parent_uuid`/`slot`; deltas determine sibling ordering. The same shape is reused inside config entities (with `inputs` as a JSON string in YAML).
+
+Translatability: the `inputs` column is always translatable; the tree column group is configurable as translatable/untranslatable for asymmetric vs. symmetric translations. Source plugins may declare an `inputs_config_schema_generator` (see `ComponentInstanceInputsConfigSchemaGeneratorInterface`) — single source of truth for which input keys translate (used by both `content_translation` and `config_translation`).
+
+Validation: `\Drupal\canvas\Plugin\Validation\Constraint\ComponentTreeStructureConstraint` + per-instance `ComponentSourceInterface::validateComponentInput()`.
+
+### 3.4 UI data model on the wire
+
+`/canvas/api/v0/layout/...` returns `{ layout, model }` where `layout` is a tree of three node types (`region`, `component`, `slot`) and `model` is a flat UUID-keyed map of resolved input values. See `docs/data-model.md` §3.4 for the full schema. The `content` region is special-cased server-side. Server-side validation refuses to save a tree where `model` and `layout` are out of sync.
+
+### 3.5 Shape matching (the heart of "wire-a-field-to-a-prop")
+
+Two phases:
+
+1. **Matchers (objective)** — `EntityFieldPropSourceMatcher`, `HostEntityUrlPropSourceMatcher`, `AdaptedPropSourceMatcher` independently return *all* prop sources of their type whose shape fits a given `PropShape`.
+2. **Suggester (subjective)** — `PropSourceSuggester` filters out irrelevant fields (revision log message, default-translation flag, …) and reorders by "obviousness" before presenting to the user.
+
+`StaticPropSource` (for unstructured data) is computed via `JsonSchemaType::computeStorablePropShape()`. Modules may implement `hook_canvas_storable_prop_shape_alter()` to change the chosen field type/widget/storage settings.
+
+**Prop expressions** are the low-level pointer DSL: `ℹ︎␜entity:node:article␝title␞99␟value`. Two representations (string ↔ typed PHP object). See `PropExpressions/StructuredData/` and `PropExpressionTest`. You only need these when implementing the alter hook above or a new prop source.
+
+Canvas extends SDC's JSON Schema with:
+
+- `contentMediaType: text/html` + `x-formatting-context: inline|block` → CKEditor 5 props.
+- `contentMediaType: image/*` + `x-allowed-schemes: [http, https]` → constrained URI props.
+- `$ref: json-schema-definitions://canvas.module/content-entity-reference` + `x-allowed-entity-type-id` / `x-allowed-bundle` → entity-reference props (code components only today).
+
+### 3.6 HTTP API
+
+Base path `/canvas/api/v0/`. Defined in `canvas.routing.yml`. Controllers in `src/Controller/Api*Controllers.php`. **Canvas does not use JSON:API or REST module** — see `docs/config-management.md` §3 for the rationale. Access uses `_canvas_authentication_required` + entity-level access. Routes flagged `canvas_external_api: true` are intended for third-party use; the optional `canvas_oauth` submodule provides OAuth2 for them.
+
+Endpoint groups (see `API.md`/`openapi.yml` for full contract):
+
+- Config CRUD: `/config/{entity_type}/{entity}` (GET/PATCH/POST/DELETE)
+- Content CRUD: `/pages/{entity_type}/{entity}`
+- Layout: `/layout/{entity_type}/{entity}`
+- Auto-save: `/auto-saves/pending`, `/auto-saves/publish`, `/auto-saves/{entity_type}/{entity}`
+- Component instance form: `/form/component-instance/{entity_type}/{entity}`
+- Media / Artifacts: `/media/upload`, `/artifacts/upload`
+- Notifications: `/notifications`, `/notifications/read`
+- Usage tracking: `/usage/component[/{id}]`
+- Preview: served via the layout GET with a preview flag
+- Extensions: `/extensions/*`
+
+### 3.7 Auto-save & "Publish all"
+
+Most Canvas mutations land in auto-save (a per-user/per-entity overlay) rather than active storage. Auto-save is owned by `src/AutoSave/`, exposed via the routes above. `CanvasConfigOverrides` (a config override) makes auto-save data win on Canvas-internal routes so previews look like the working copy. `JavaScriptComponent` and `PageRegion` rely on this overlay for the "Working copy vs Published" distinction (see `docs/config-management.md` §3.2.1).
+
+`StagedConfigUpdate` is the special case: a config entity that *only* exists in auto-save; on publish its `actions` array is applied to a target config object.
+
+### 3.8 Versioning
+
+Both `Component` and `JavaScriptComponent` are *versioned* config entities (`VersionedConfigEntityBase`). Each version has a deterministic hash. Stored component instances reference a *specific* version. Updaters (`ComponentInstanceUpdaterInterface`, with `ComponentInstanceUpdateAttemptResult`) decide whether a stale instance can be auto-updated:
+
+- **Safe** (auto-update): add/remove optional props, add/remove slots, optional↔required toggles, widget-only changes, default/example changes.
+- **Unsafe** (manual intervention): changing a prop shape.
+
+Auto-update fires on entering an editor or rendering a preview — see `ApiLayoutController::buildRegion()` and `ApiConfigControllers::normalize()`.
+
+### 3.9 Page rendering
+
+A `ContentTemplate` is consulted on render only when (1) one exists for this entity type + bundle + view mode and (2) the entity type is `Node` (current limitation). When used, `hook_entity_display_build_alter()` is **bypassed** — Canvas does not render through field formatters.
+
+For theme regions (header/footer/etc.), once a theme has at least one *enabled* `PageRegion`, Canvas's `CanvasPageVariant` PageDisplayVariant takes over from the Block module's `BlockPageVariant`.
+
+### 3.10 Hooks worth knowing
+
+- `hook_canvas_storable_prop_shape_alter()` — change how unstructured data is stored for a prop shape.
+- `hook_field_widget_info_alter()` with `$info[...]['canvas']['transforms']` — declare how a widget's form values map to a prop value (see `canvas.redux_integrated_field_widgets.inc`).
+- `hook_library_info_alter()` is leveraged by Canvas to attach any `canvas.transform.*` libraries to the UI automatically.
+
+See `canvas.api.php` for the documented hook surface.
 
 ---
 
-## 5. UI Architecture (`ui/`)
+## 4. Frontend (React + Redux) — `ui/`
 
-The frontend is a React + Redux Toolkit application embedded as a Drupal library. Entry point and key structure:
+### 4.1 Tech stack
+
+- **React + TypeScript**, built with the Canvas build pipeline (`npm run build` in `ui/`).
+- **Redux Toolkit** + **RTK Query** for state and server I/O.
+- **redux-undo** wraps `layoutModel` and `pageData` for undo/redo. A "history eraser" middleware keeps both slices in sync across undo steps.
+- **Radix UI Themes** for component primitives.
+- **Hyperscriptify** (`ui/src/utils/hyperscriptify.js`, local fork) renders custom HTML elements emitted by the `canvas_stark` theme as React components — see `docs/twig-to-react-in-canvas-stark.md`.
+
+### 4.2 Source layout (`ui/src/`)
 
 ```
-ui/src/
-├── app/
-│   ├── store.ts              # Redux store (redux-undo on layout + pageData)
-│   └── hooks.ts              # useAppDispatch, useAppSelector
-├── features/
-│   ├── layout/layoutModelSlice.ts        # Component tree state (RegionNode → ComponentNode → SlotNode)
-│   ├── pageData/pageDataSlice.ts         # Page title, description, owner
-│   ├── form/formStateSlice.ts            # Active form field state
-│   ├── ui/uiSlice.ts                     # Panning, hover, route state
-│   ├── ui/dialogSlice.ts                 # Modal/dialog state
-│   ├── code-editor/codeEditorSlice.ts    # JS/CSS editor state
-│   ├── notifications/notificationsSlice.ts
-│   └── personalization/personalizationSlice.ts
-├── services/
-│   ├── baseQuery.ts                      # Fetch wrapper with auto-save awareness
-│   ├── componentAndLayout.ts             # Layout read/write RTK Query service
-│   ├── content.ts                        # canvas_page CRUD
-│   ├── preview.ts                        # Preview rendering
-│   ├── assetLibrary.ts / brandKit.ts     # Asset management
-│   ├── patterns.ts                       # Pattern CRUD
-│   └── notificationsApi.ts              # Polling for backend notifications
-├── components/
-│   ├── aiExtension/AiWizard.tsx          # Chat UI; parses tool outputs to drive UI mutations
-│   └── ...                              # 20+ other UI component subdirectories
-└── types/                               # TypeScript types (Component.ts, Form.ts, Content.ts, etc.)
+app/
+  store.ts              # Redux store (combined slices + RTK Query APIs, undo wrapper)
+  hooks.ts              # typed useAppDispatch / useAppSelector
+features/               # Redux slices, one folder per domain
+  layout/layoutModelSlice.ts    # The component tree (RegionNode → ComponentNode → SlotNode)
+  pageData/pageDataSlice.ts     # Title, description, owner
+  form/formStateSlice.ts        # Active form field state (Redux-integrated widgets)
+  ui/uiSlice.ts                 # Pan/hover/route/selection (shared across viewports + Layers panel)
+  ui/dialogSlice.ts
+  code-editor/codeEditorSlice.ts
+  notifications/notificationsSlice.ts
+  personalization/personalizationSlice.ts
+  pagePreview/previewSlice.ts
+  configuration/, editor/, editorFrame/, error-handling/, extensions/, pattern/, validation/, welcome/, brandKit/
+services/               # RTK Query endpoints
+  baseQuery.ts                  # Fetch wrapper aware of auto-save semantics
+  componentAndLayout.ts         # Layout GET/PATCH
+  content.ts                    # canvas_page CRUD
+  preview.ts, assetLibrary.ts, brandKit.ts, patterns.ts
+  notificationsApi.ts           # adaptive polling
+components/             # 20+ UI component subdirectories
+  form/                 # Form.tsx, inputBehaviors.tsx, twig-to-jsx-component-map.js
+  aiExtension/          # AiWizard.tsx (chat UI for canvas_ai)
+types/                  # TS types: Component.ts, Form.ts, Content.ts, …
+utils/
+  transforms.ts                 # Built-in widget transforms (mainProperty, dateTime, etc.)
+  hyperscriptify.js
 ```
 
-### Layout Model Shape
-The Redux `layoutModel` slice represents the page as a tree:
+### 4.3 Layout model (Redux)
+
 ```
 RootLayoutModel {
-  layout: RegionNode[]     // top-level regions (e.g. "content", "header")
-  model: ComponentModels   // flat map of uuid → component metadata
+  layout: RegionNode[]      // top-level regions (content, header, …)
+  model:  ComponentModels   // flat UUID → resolved input map
 }
 
-RegionNode → ComponentNode[] → SlotNode[] → ComponentNode[] (recursive)
+RegionNode → ComponentNode[] → SlotNode[] → ComponentNode[] … (recursive)
 ```
 
-Undo/redo is handled by `redux-undo` wrapping the `layoutModel` and `pageData` slices. The store uses a "history eraser" middleware pattern to keep both slices in sync across undo steps.
+Each `ComponentNode.type` is `<canvas_component_id>@<version_hash>`. Slot IDs are `<parentUuid>/<slotName>`.
+
+### 4.4 Redux-integrated field widgets — how Drupal Form API forms get into React
+
+Server-rendered Drupal form arrays are emitted by the **`canvas_stark`** admin theme as custom HTML elements (`<drupal-canvas-form>`, `<drupal-canvas-input>`, etc.). Hyperscriptify converts them into React components via the map in `ui/src/components/form/twig-to-jsx-component-map.js`.
+
+Each form-control React component is wrapped by `inputBehaviors` (`ui/src/components/form/inputBehaviors.tsx`), which:
+
+- Updates the Redux `formState` slice on change (and updates the preview).
+- Runs client-side JSON-Schema validation against the prop's schema.
+- Applies **transforms** (`ui/src/utils/transforms.ts`) to reshape form values into the canonical prop value before dispatching.
+
+Built-in transforms: `mainProperty`, `firstRecord`, `mediaSelection`, `dateTime`, `dateRange`. Custom transforms ship as JS libraries with the `canvas.transform.` prefix and register on `Drupal.canvasTransforms`. Multi-cardinality fields get `multiple: true` automatically; weight-aware ordering kicks in when entries carry `weight`/`_weight`.
+
+The `data-canvas-no-update` attribute opts an input out of preview/store updates (useful for autocomplete intermediates).
+
+### 4.5 Preview architecture
+
+```
+Preview.tsx
+└─ Viewport.tsx (one per breakpoint)
+   ├─ IframeSwapper.tsx (two iframes A/B for flicker-free swaps)
+   └─ ViewportOverlay.tsx (portalled above the editor frame; mirrors regions/components/slots)
+```
+
+The overlay is a transparent **mirror** of the iframe DOM, sized via ResizeObserver/MutationObserver. All interaction (hover, click, drag, right-click) is handled in the overlay, never in the iframe. The server annotates rendered HTML with comments marking each region/component/slot; `useComponentHtmlMap` builds the UUID → element map on every preview refresh.
+
+### 4.6 Code-component compiler
+
+In-browser editor for `js_component` entities. Per-component source JS is compiled with **SWC**, source CSS with **Lightning CSS**. The global asset library's Tailwind config is compiled with the **Tailwind CSS** compiler whenever any code-component's source JS changes (so utility class indexing stays current). See `docs/react-codebase/code-editor.md` for the flowchart.
 
 ---
 
-## 6. Canvas AI Sub-Module
+## 5. Sub-modules (`modules/`)
 
-Canvas AI (`modules/canvas_ai/`) is a sub-module that adds conversational AI to the editor. It is built on the **Drupal AI Agents** module.
-
-### How it works
-1. The user types in the chat UI (`ui/src/components/aiExtension/AiWizard.tsx`).
-2. `modules/canvas_ai/src/Controller/CanvasBuilder.php` receives the request, reconstructs message history, builds Drupal context (entity type, IDs, selected component UUID, current layout), and invokes the orchestrator agent.
-3. The orchestrator delegates to specialized sub-agents. Sub-agents are stateless — they receive only a specific task prompt from the orchestrator, not the full chat history.
-4. Each agent calls `AiFunctionCall` tool plugins to read or mutate Drupal state.
-5. Tool outputs are returned to `AiWizard.tsx` as structured JSON, which triggers layout mutations and UI updates directly.
-
-### Agents
-
-All agent system prompts, tool lists, and configuration are in:
-`modules/canvas_ai/config/install/`
-
-| Agent ID | Config file | Responsibility |
-|----------|-------------|----------------|
-| `canvas_ai_orchestrator` | `ai_agents.ai_agent.canvas_ai_orchestrator.yml` | Sole agent with full chat history; routes intent to sub-agents |
-| `canvas_component_agent` | `ai_agents.ai_agent.canvas_component_agent.yml` | Creates/edits JS (React/Preact) code components |
-| `canvas_page_builder_agent` | `ai_agents.ai_agent.canvas_page_builder_agent.yml` | Adds components incrementally to an existing `canvas_page` or `content_template` |
-| `canvas_template_builder_agent` | `ai_agents.ai_agent.canvas_template_builder_agent.yml` | Builds a complete page template (all regions) from scratch |
-| `canvas_title_generation_agent` | `ai_agents.ai_agent.canvas_title_generation_agent.yml` | Writes SEO-friendly page titles to the `canvas_page` entity |
-| `canvas_metadata_generation_agent` | `ai_agents.ai_agent.canvas_metadata_generation_agent.yml` | Writes SEO meta descriptions to the `canvas_page` entity |
-
-### Page Builder and Template Builder: component selection
-Both agents operate on `canvas_component` entities (SDC, block, or JS components). They do not see components visually — they reason purely from component metadata: props, slots, and descriptions configured at `Configuration → AI → Canvas AI Component Description Settings`. Agents call `get_component_context` to retrieve this metadata before deciding what to place on the page.
-
-Title and metadata agents work exclusively on `canvas_page` entities via `get_entity_information`, `edit_field_content`/`create_field_content`, and `add_metadata` tools.
-
-### AI-generated YAML: structure and rules
-
-Both the page builder and template builder agents are instructed (in their system prompts) to produce YAML. The exact formats are:
-
-**Page builder — `set_component_structure` input:**
-```yaml
-operations:
-  - target: "content"              # region name OR "parent-uuid/slot_name" for a slot
-    reference_uuid: "abc-123"      # UUID of anchor component; omit when placement is "inside"
-    placement: above               # inside | above | below
-    components:
-      - sdc.my_hero:
-          props:
-            title: "Welcome"
-            image:
-              src: /path/from/catalog   # MUST be copied exactly from catalog defaults
-              alt: "Alt text"
-              width: 601
-              height: 402
-          slots:
-            content:
-              - sdc.button:
-                  props:
-                    label: "Get started"
-  - target: "abc-123/footer_slot"  # second operation for a different location
-    placement: inside
-    components:
-      - sdc.link: ...
-```
-
-Rules enforced by the system prompt: no null values, no empty strings, no empty slots, no invented component IDs, image props must copy exact defaults from catalog (src/alt/width/height unchanged), enum props must use catalog values only.
-
-**Template builder — `set_template_data` input:**
-```yaml
-content:                           # region name; only "content" unless user asks for header/footer
-  - sdc.hero_banner:
-      props:
-        title: "Welcome"
-      slots:
-        slot_name:
-          - sdc.button:
-              props:
-                label: "Shop now"
-  - sdc.features_grid:
-      props:
-        heading: "Why choose us"
-header:                            # only present if theme has a header region and user requests it
-  - sdc.site_header:
-      props: ...
-```
-
-Rules: minimum five sections in the content region, no comments in YAML, production-quality copy (no Lorem Ipsum), only catalog-sourced component IDs.
-
-### `CanvasAiPageBuilderHelper`: the core canvas_ai service
-
-`modules/canvas_ai/src/CanvasAiPageBuilderHelper.php` is the central service that bridges raw AI YAML output and the Canvas UI layout format. It handles both the page builder and template builder flows.
-
-**Key responsibilities and public methods:**
-
-| Method | What it does |
-|--------|-------------|
-| `customYamlToArrayMapper(string $yaml)` | Entry point for page builder: parses AI YAML → adds UUIDs → merges with current layout → extracts `nodePath` for each component → returns operations array |
-| `processSetTemplateDataToolInput(array $parsed, string $layoutJson)` | Entry point for template builder: same nodePath calculation over a full region map |
-| `getComponentContextForAi()` | Builds the YAML catalog of all available components (props, slots, descriptions) that agents receive via `get_component_context` |
-| `getAllComponentsKeyedBySource()` | Fetches SDC, JS, and block components with caching; used to build catalog |
-| `getAvailableRegions(string $layoutJson)` | Returns region names + nodePathPrefix + descriptions from config; used to inform agents what regions exist |
-| `createExpectedPageLayout(array $current, array $aiOutput)` | Simulates placing AI components into the current layout to predict the post-save layout tree |
-| `hasChildComponents(string $target)` | Checks whether a region or slot already has children; used to decide `inside` vs `above`/`below` |
-
-**Transformation pipeline (page builder):**
-1. Parse YAML string from AI tool call.
-2. `addUuidToAllComponents()` — assign a fresh UUID to every component in the AI output.
-3. Load current layout from `tempstore`.
-4. `createExpectedPageLayout()` — merge the AI components into the current layout at the instructed positions (`placeComponentsInLayout()` handles `inside`/`above`/`below` logic).
-5. `getCalculatedNodepath()` — walk the predicted layout tree to compute the `nodePath` array (positional indices used by the Canvas UI to locate a node in the tree) for each new component, including slot index resolution via `getSlotIndexFromSlotName()`.
-6. Return `{ operations: [{ operation: 'ADD', components: [{ id, nodePath, fieldValues }] }] }` — the format the Canvas UI (`AiWizard.tsx`) consumes to apply mutations to the Redux `layoutModel`.
-
-### `AiResponseValidator`: YAML validation before execution
-
-`modules/canvas_ai/src/AiResponseValidator.php` validates AI-generated component structures before any layout mutation is applied.
-
-**What it does:**
-- `validateComponentStructure(array $componentGroups)` converts the AI output to `ComponentTreeItem` format via `convertToComponentTreeData()`, attaches it to a dangling `ComponentTreeItemList` field, and runs Drupal's recursive constraint validator on it.
-- Checks: component existence, version correctness, prop/input validity (via `Component::normalizeForClientSide()` and `source->clientModelToInput()`), and parent-child slot relationships.
-- For components that don't yet exist in the system (e.g., a just-created `js_component`), it assigns a temporary version (`temp-version-{uuid}`) so validation can still proceed on everything else.
-- On failure: throws `ConstraintViolationException` with translated property paths pinpointing the exact violation (e.g., `components.0.[component_id].props.prop_name`).
-- On success: returns silently. The calling tool proceeds to pass the validated structure to `CanvasAiPageBuilderHelper` for nodePath calculation and UI dispatch.
+| Module | Purpose |
+|---|---|
+| `canvas_ai` | Conversational AI editor, built on `drupal/ai_agents`. Sub-agents: orchestrator + component / page-builder / template-builder / title / metadata. YAML-driven; central service `CanvasAiPageBuilderHelper` translates AI YAML → layout operations consumed by `AiWizard.tsx`. See root `CLAUDE.md` for details |
+| `canvas_dev_mode` | Gates dev-only features (notifications system, debug helpers) |
+| `canvas_dev_translation` | Test-only translation helpers |
+| `canvas_oauth` | OAuth2 for external-facing API routes (`canvas_external_api: true`) |
+| `canvas_personalization` | Segment / Variant / `switch` + `case` components (see `docs/personalization.md`) |
+| `canvas_vite` | Optional Vite-based asset pipeline |
 
 ---
 
-## 7. Quality Gates (Mandatory After Every Code Change)
+## 6. Theme: `canvas_stark`
 
-Run both checks on any modified PHP file before considering a change done.
+A dedicated admin theme (`themes/canvas_stark/`) used to render Drupal Form API output in a React-friendly way. It renders form-control elements as custom HTML elements (`<drupal-canvas-input>`, `<drupal-canvas-textarea>`, …) which Hyperscriptify (in the UI) converts to React. See `docs/twig-to-react-in-canvas-stark.md`. Naming: `drupal-canvas-*` for elements originating from Drupal render arrays, `canvas-*` for those originating in Twig.
 
+---
+
+## 7. Coding standards & conventions
+
+### 7.1 PHP
+
+- **Drupal coding standards** (`phpcs.xml` extends core's), with a relaxed docblock requirement (no enforced boilerplate yet — but you still must doc *what* code does, not its history).
+- **PHPStan level 8** with `mglaman/phpstan-drupal` and a custom rule set in `phpstan_rules/`. `phpat/phpat` enforces architectural boundaries. Baselines: `phpstan-11.3-and-higher-ignores.neon`.
+- Custom **PHP_CodeSniffer** sniffs live in `coding_standards/Canvas/Sniffs/` — Canvas-specific rules around test conventions (`PhpunitAnnotationsSniff`, `KernelTestBaseSniff`, `ForbiddenTestTypesSniff`).
+- Final, typed, dependency-injected services. New code should use OOP hook handlers in `src/Hook/` per Drupal 11's hook attribute system.
+- Doc-comments describe *current* behavior only. No "we used to…" prose. Open items go in `@todo` tags with a concrete action.
+
+### 7.2 JS / TS / CSS
+
+- **ESLint** (`eslint.config.mjs`), **Prettier** (`.prettierrc.json`), **Stylelint**, **cspell** (`.cspell.json`).
+- **Import order** is enforced by `@ianvs/prettier-plugin-sort-imports` — full table in `docs/react-codebase/import-sorting.md`. TL;DR: builtins → `react` → external (no `.`/`@`) → external `@`-scoped → `<THIRD_PARTY_MODULES>` → `@/...` local → relative → types (same order) → CSS.
+
+### 7.3 Commits
+
+[Conventional Commits](https://www.conventionalcommits.org). `feat:` → minor bump, `fix:`/`chore:` → patch.
+
+---
+
+## 8. Quality gates — **run after every PHP change**
+
+From the **module root** (`web/modules/contrib/canvas/`):
+
+```bash
+# Static analysis (always run on the modified file or full tree)
+composer run phpstan
+composer run phpcs
+composer run phpcbf      # to auto-fix what can be fixed
+
+# Tests (subset; run full suite in CI only)
+composer run phpunit -- --help
 ```
-# PHPStan (adjust the file path for the file you changed)
+
+Or, for a single file (e.g. inside DDEV):
+
+```bash
 ddev exec ./vendor/bin/phpstan analyze \
   --configuration=web/modules/contrib/canvas/phpstan.neon \
   --autoload-file=web/modules/contrib/canvas/phpstan_rules/autoload.php \
-  web/modules/contrib/canvas/<path to changed file>
+  web/modules/contrib/canvas/<changed-file>
 
-# PHPCS
 ddev exec ./vendor/bin/phpcs \
-  --standard=web/modules/contrib/canvas/phpcs.xml \
-  --no-cache \
-  web/modules/contrib/canvas/<path to changed file>
+  --standard=web/modules/contrib/canvas/phpcs.xml --no-cache \
+  web/modules/contrib/canvas/<changed-file>
 ```
 
+For JS/TS/CSS:
+
+```bash
+cd ui && npm run lint           # eslint + prettier + stylelint + cspell
+```
+
+OpenAPI lint (after touching `openapi.yml` or routes):
+
+```bash
+npx @redocly/cli@latest lint openapi.yml
+```
+
+DDEV shortcuts (`ddev-drupal-xb-dev` add-on):
+
+- `ddev xb-site-install` — reinstall a clean test site.
+- `ddev xb-ui-build` — build the React UI.
+- `ddev xb-phpcs`, `ddev xb-phpstan`, `ddev xb-phpunit`, `ddev xb-eslint`, `ddev xb-fix`.
+
 ---
 
-## 8. Comment and Documentation Rules
+## 9. Testing
 
-Doc comments and inline comments must describe **what the code does right now** — nothing else. Do not reflect conversation history, prior iterations, design rationale from chat, or "we decided to…" narratives. A reader opening the file cold should learn the current behavior, not the journey that produced it. Future work, deferred decisions, or known gaps must be captured as proper `@todo` tags (one per item, with a concrete action), not as prose buried in a class or function docblock.
+| Type | Location | Runner |
+|---|---|---|
+| Unit | `tests/src/Unit/` | PHPUnit |
+| Kernel | `tests/src/Kernel/` | PHPUnit |
+| Functional / FunctionalJavascript | `tests/src/Functional*/` | PHPUnit |
+| Playwright (E2E) | `tests/src/Playwright/` | `npm run test:playwright` |
+| Fixtures (recipes) | `tests/fixtures/recipes/{base,test_site,test_site_personalization}` | Drupal recipes API |
+
+### Conventions
+
+- Source plugin coverage starts from `ComponentSourceTestBase`.
+- Prop-expression coverage is split between a unit test (`Tests/Unit/PropExpressionTest`) and a kernel test (`Tests/Kernel/PropExpressionKernelTest`) reusing the same cases — fast feedback wins.
+- Field-type/field-widget ecosystem completeness is enforced by `EcosystemSupport/FieldInstanceSupportTest` and `EcosystemSupport/FieldWidgetSupportTest` — when adding support for a new field type or widget, extend those.
+- Custom PHPCS sniffs prevent forbidden test types and missing annotations — see `coding_standards/Canvas/Sniffs/Tests/`.
+- Playwright tests parallelize per file (serial within a file). Use the `DrupalSite` fixture and the `drupal` page-object. Tests must be retry-safe (no cross-test state).
+- During early MR work, disable E2E in CI by setting `_CANVAS_E2E_TESTS: false` in `.gitlab-ci.yml`.
+
+### Setup
+
+See `docs/testing/setup.md`. TL;DR: `composer run install-dev-deps` (or `ddev exec -d /var/www/html/modules/contrib/canvas composer install-dev-deps`).
 
 ---
 
-*Module: `canvas_ai` | Status: Active*
+## 10. Local dev workflow (DDEV recommended)
+
+```bash
+mkdir ~/Sites/canvas-dev && cd ~/Sites/canvas-dev
+ddev config --project-type=drupal --php-version=8.3 --docroot=web
+ddev composer create drupal/recommended-project:11.x@dev --no-install
+ddev add-on get drupal-canvas/ddev-drupal-xb-dev
+ddev xb-setup
+ddev xb-dev-extras
+```
+
+Add `$settings['extension_discovery_scan_tests'] = TRUE;` to `sites/default/settings.php`.
+
+### Hidden dev tips (from `CONTRIBUTING.md`)
+
+- **Hold `V`** in the editor to hide the React overlay and inspect the iframe DOM directly. Click into the iframe with `V` held to "lock" the hidden state.
+- Reinstall the site (`ddev xb-site-install`) and rebuild the UI (`ddev xb-ui-build`) frequently — Canvas does *a lot* of cache-sensitive auto-discovery.
+- When working on a fresh sqlite DB: `rm web/sites/default/.ht.sqlite`.
+
+---
+
+## 11. Issue & contribution workflow
+
+1. Issue queue: <https://www.drupal.org/project/issues/canvas>. Each domain doc lists its issue-queue component (Data model, Shape matching, Redux-integrated field widgets, Config management, …). Match `CODEOWNERS` to find reviewers.
+2. Source: <https://git.drupalcode.org/project/canvas>. Contribution model is GitLab merge requests on issue forks.
+3. Architectural decisions go in `docs/adr/` via `adr new "..."` (npryce/adr-tools).
+4. Releases: tag `vX.Y.Z` on `1.x` (or a `hotfix-YYYYMMDD` branch); automation creates the unprefixed `X.Y.Z` release tag with built assets. See `docs/release-process.md`.
+
+---
+
+## 12. Glossary cheat sheet
+
+- **component** — code that produces markup + optional CSS/JS, parameterized by inputs.
+- **canvas_component** — the config entity wrapping a component (one per eligible SDC/block/JS).
+- **component type / source** — `sdc`, `block`, `js`, `fallback`.
+- **component instance** — UUID + version + inputs + (optionally) parent_uuid+slot.
+- **component tree / layout** — a hierarchical list of component instances stored in a Canvas field.
+- **slot** — a named hole inside a component that can hold child instances.
+- **region** — a top-level theme region (e.g. `content`, `header`); behaves like a slot at the page level.
+- **prop / explicit input** — a typed argument to a component (SDC/JS); for blocks the equivalent is plugin settings.
+- **implicit input** — input not supplied by the editor (route, time, user, contexts) — currently only partial support.
+- **prop shape** — the normalized JSON-schema shape of a prop (no titles/descriptions).
+- **prop source** — how a prop's value is retrieved: `static`, `entity_field`, `host_entity_url`, `adapted`, (TBD) `remote`.
+- **prop expression** — DSL pointing at exactly which field props to read (string ↔ typed PHP object).
+- **conjured field** — a synthetic field instance (not in code, not in config) backing a static prop source.
+- **structured vs. unstructured data** — entity fields vs. inline static values.
+- **page region** — a config entity storing a component tree per theme region.
+- **pattern** — a reusable saved sub-tree (absorbed at insertion time; not live-linked).
+- **content template** — a config entity binding a layout to entity-type+bundle+view-mode.
+- **brand kit** — global config entity for fonts and design tokens.
+- **folder** — UI-only grouping of components/patterns/code-components.
+- **canvas page** — `canvas_page` content entity, the standalone landing page.
+- **auto-save / working copy** — per-user/per-entity overlay store; "Publish all" promotes to live.
+- **versioned config entity** — `Component` / `JavaScriptComponent`, with hash-named versions.
+- **fallback** — special source plugin that retains data when a real source disappears.
+
+---
+
+*Status: active. When in doubt, search the in-tree `docs/` first, then the issue queue.*
