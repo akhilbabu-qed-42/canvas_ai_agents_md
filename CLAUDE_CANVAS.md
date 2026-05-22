@@ -12,7 +12,7 @@ A React + Redux page builder for Drupal that lets non-developers compose pages i
 
 - A **custom content entity** `canvas_page` for standalone pages.
 - A **`content_template` config entity** that attaches Canvas layouts to existing content entities by entity type + bundle + view mode (currently only `Node`).
-- A **unified component model** wrapping three sources (SDC, block plugins, JS code components) behind a single `canvas_component` config entity.
+- A **unified component model** wrapping three sources (SDC, block plugins, JS code components) behind a single `component` config entity.
 - A **shape-matching system** that lets component props be wired to Drupal entity fields with type safety, or filled with ad-hoc "static" data.
 - A **versioned auto-save system** so in-progress edits don't block publishing.
 - An **AI sub-module** (`canvas_ai`) — see `modules/canvas_ai/`.
@@ -92,7 +92,7 @@ Each domain doc also points at the Drupal.org issue queue *component* and `CODEO
 
 ### 3.2 Component sources
 
-Plugin type `canvas_component_source` (manager: `src/ComponentSource/ComponentSourceManager.php`). To add a new source: implement `ComponentSourceInterface` (or extend `ComponentSourceBase` / `GeneratedFieldExplicitInputUxComponentSourceBase`). Sources without their own input UX **must** produce an SDC `ComponentMetadata` so shape-matching can generate a field-based input UX — see `JsComponent::buildEphemeralSdcPluginInstance()` for the canonical example.
+Plugin type `component_source` (manager: `src/ComponentSource/ComponentSourceManager.php`). To add a new source: implement `ComponentSourceInterface` (or extend `ComponentSourceBase` / `GeneratedFieldExplicitInputUxComponentSourceBase`). Sources without their own input UX **must** produce an SDC `ComponentMetadata` so shape-matching can generate a field-based input UX — see `JsComponent::buildEphemeralSdcPluginInstance()` for the canonical example.
 
 Eligibility checks: `ComponentMetadataRequirementsChecker` (SDC), `BlockComponent::checkRequirements()` (blocks). Failures are stored in `ComponentIncompatibilityReasonRepository` and surfaced in `/admin/appearance/component/status`.
 
@@ -232,7 +232,7 @@ RootLayoutModel {
 RegionNode → ComponentNode[] → SlotNode[] → ComponentNode[] … (recursive)
 ```
 
-Each `ComponentNode.type` is `<canvas_component_id>@<version_hash>`. Slot IDs are `<parentUuid>/<slotName>`.
+Each `ComponentNode.type` is `<component_id>@<version_hash>`. Slot IDs are `<parentUuid>/<slotName>`.
 
 ### 4.4 Redux-integrated field widgets — how Drupal Form API forms get into React
 
@@ -410,7 +410,7 @@ Add `$settings['extension_discovery_scan_tests'] = TRUE;` to `sites/default/sett
 ## 12. Glossary cheat sheet
 
 - **component** — code that produces markup + optional CSS/JS, parameterized by inputs.
-- **canvas_component** — the config entity wrapping a component (one per eligible SDC/block/JS).
+- **component** — the config entity wrapping a component (one per eligible SDC/block/JS).
 - **component type / source** — `sdc`, `block`, `js`, `fallback`.
 - **component instance** — UUID + version + inputs + (optionally) parent_uuid+slot.
 - **component tree / layout** — a hierarchical list of component instances stored in a Canvas field.
