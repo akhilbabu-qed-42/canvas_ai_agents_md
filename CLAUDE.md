@@ -11,14 +11,14 @@ All paths are relative to the repo root: `web/modules/contrib/canvas/`.
 Drupal Canvas is a visual page-builder module for Drupal 10/11. It provides:
 - A React-based in-browser editor (rendered inside an iframe) where editors assemble pages by placing components into regions and slots.
 - A custom content entity (`canvas_page`) for standalone pages, plus a `content_template` config entity that attaches canvas layouts to existing Drupal content entities via view modes.
-- A component model that unifies three different component sources — Single Directory Components (SDC), Drupal block plugins, and JavaScript (React/Preact) code components — under a single abstraction (`canvas_component` config entity).
+- A component model that unifies three different component sources — Single Directory Components (SDC), Drupal block plugins, and JavaScript (React/Preact) code components — under a single abstraction (`component` config entity).
 - A versioned auto-save system so in-progress edits never block publishing.
 
 ---
 
 ## 2. Component Entities and Sources
 
-### The `canvas_component` Config Entity
+### The `component` Config Entity
 `src/Entity/Component.php` — wraps any component source. Key fields: `id`, `label`, `source` (plugin ID), `source_local_id`, `provider`, `active_version`, `versioned_properties`.
 
 ### Component Sources (Plugin System)
@@ -151,14 +151,14 @@ All agent system prompts, tool lists, and configuration are in:
 | Agent ID | Config file | Responsibility |
 |----------|-------------|----------------|
 | `canvas_ai_orchestrator` | `ai_agents.ai_agent.canvas_ai_orchestrator.yml` | Sole agent with full chat history; routes intent to sub-agents |
-| `canvas_component_agent` | `ai_agents.ai_agent.canvas_component_agent.yml` | Creates/edits JS (React/Preact) code components |
+| `component_agent` | `ai_agents.ai_agent.component_agent.yml` | Creates/edits JS (React/Preact) code components |
 | `canvas_page_builder_agent` | `ai_agents.ai_agent.canvas_page_builder_agent.yml` | Adds components incrementally to an existing `canvas_page` or `content_template` |
 | `canvas_template_builder_agent` | `ai_agents.ai_agent.canvas_template_builder_agent.yml` | Builds a complete page template (all regions) from scratch |
 | `canvas_title_generation_agent` | `ai_agents.ai_agent.canvas_title_generation_agent.yml` | Writes SEO-friendly page titles to the `canvas_page` entity |
 | `canvas_metadata_generation_agent` | `ai_agents.ai_agent.canvas_metadata_generation_agent.yml` | Writes SEO meta descriptions to the `canvas_page` entity |
 
 ### Page Builder and Template Builder: component selection
-Both agents operate on `canvas_component` entities (SDC, block, or JS components). They do not see components visually — they reason purely from component metadata: props, slots, and descriptions configured at `Configuration → AI → Canvas AI Component Description Settings`. Agents call `get_component_context` to retrieve this metadata before deciding what to place on the page.
+Both agents operate on `component` entities (SDC, block, or JS components). They do not see components visually — they reason purely from component metadata: props, slots, and descriptions configured at `Configuration → AI → Canvas AI Component Description Settings`. Agents call `get_component_context` to retrieve this metadata before deciding what to place on the page.
 
 Title and metadata agents work exclusively on `canvas_page` entities via `get_entity_information`, `edit_field_content`/`create_field_content`, and `add_metadata` tools.
 
