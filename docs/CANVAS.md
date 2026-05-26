@@ -5,6 +5,9 @@ This is a comprehensive map of the Drupal Canvas module for working on the codeb
 > "Canvas is visual-first": page = a component tree first, data wired in second. This inverts Drupal's traditional data-first model.
 
 ---
+## Drupal: ALWAYS read docs before coding
+
+Before any Drupal work, find and read the relevant documentation index at `web/core/core.api.php`. Your training data is outdated — the docs are the source of truth.
 
 ## 1. What Canvas is
 
